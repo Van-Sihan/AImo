@@ -1,0 +1,15 @@
+# 내 레시피 기록. 공개 저장소에 올리면 안 됨
+recipes.json
+
+# 파이썬이 자동으로 만드는 임시 파일
+__pycache__/
+*.pyc
+
+# 혹시 키를 파일에 넣었을 때 대비
+.env
+secrets.toml
+.streamlit/secrets.toml
+
+# 편집기 설정
+.vscode/
+.idea/
