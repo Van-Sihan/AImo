@@ -1,14 +1,12 @@
-# Streamlit 자체 테마 설정
-# 이 파일이 없으면 Streamlit은 밝은 테마로 동작하면서
-# 라벨과 입력 글자를 어두운 회색으로 그림 -> 어두운 배경에서 안 보임
+# Streamlit theme
+# Warm kitchen look. Light base with orange accent.
 [theme]
-base = "dark"
-primaryColor = "#FF7A2F"
-backgroundColor = "#0F1115"
-secondaryBackgroundColor = "#191C22"
-textColor = "#F4F2ED"
+base = "light"
+primaryColor = "#E8842A"
+backgroundColor = "#FFFCF7"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#3A3230"
 font = "sans serif"
 
 [server]
-# 파일을 저장하면 화면이 바로 갱신되도록 함
 runOnSave = true
