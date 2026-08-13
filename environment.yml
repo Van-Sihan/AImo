@@ -1,0 +1,16 @@
+# 아나콘다 환경을 통째로 만드는 파일
+# 설치: conda env create -f environment.yml
+# 파이썬 버전까지 함께 맞춰지므로 requirements.txt 보다 확실함
+
+name: py312_AIaudio
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - streamlit>=1.41.0
+      - google-genai>=1.0.0
+      - gTTS>=2.5.0
