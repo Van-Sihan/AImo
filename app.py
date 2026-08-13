@@ -33,6 +33,10 @@ from pathlib import Path
 # 저장한 날짜를 기록하기 위해 가져옴
 from datetime import datetime
 
+# 로고와 배너 그림이 있는 폴더
+# app.py 와 같은 위치를 기준으로 잡아야 어디서 실행해도 찾을 수 있음
+ASSETS = Path(__file__).parent / "assets"
+
 
 # ---------------------------------------------------------------------
 # 1. 설정
@@ -43,6 +47,10 @@ MODELS = {
     "빠르게 (Flash-Lite)": "gemini-flash-lite-latest",
     "꼼꼼하게 (Flash)": "gemini-flash-latest",
 }
+
+# 타이머를 걸 만한 최소 시간
+# 이보다 짧으면 타이머가 의미 없으므로 버튼을 감춤
+MIN_TIMER_SEC = 30
 
 # 답변의 최대 길이. 요리 중에는 짧아야 하므로 낮게 잡음
 MAX_TOKENS = 400
@@ -114,20 +122,26 @@ st.set_page_config(page_title="AI모네 밥상", page_icon="🔥", layout="wide"
 # 색은 모두 어두운 배경에서 대비 4.5 이상이 나오도록 고른 값임
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
 :root {
-    --bg:        #0F1115;
-    --surface:   #191C22;
-    --surface-2: #21252D;
-    --line:      #2E333D;
-    --ink:       #F4F2ED;
-    --ink-2:     #C3C9D4;
-    --ink-3:     #98A0AE;
-    --flame:     #FF8340;
-    --mint:      #6FE0C6;
+    --bg:        #FFFCF7;   /* 크림색 바탕 */
+    --card:      #FFFFFF;   /* 흰 카드 */
+    --peach:     #FFF6EC;   /* 연한 살구색 강조 카드 */
+    --line:      #EFE0CC;   /* 옅은 경계선 */
+    --line-2:    #DFC9AB;   /* 카드 경계선 */
+    --line-3:    #B08A57;   /* 입력칸 경계선 (3.1:1) */
+    --sidebar:   #FFF7EC;   /* 사이드바 바탕. 본문과 구분 */
+    --ink:       #3A3230;   /* 본문 (12.2:1) */
+    --ink-2:     #6B5F58;   /* 보조 (6.0:1) */
+    --ink-3:     #7D6E63;   /* 흐림 (4.6:1) */
+    --orange:    #E8842A;   /* 강조색. 큰 글자와 테두리용 */
+    --orange-t:  #A85004;   /* 작은 글자용 진한 주황 (5.5:1) */
+    --amount:    #3A3230;   /* 분량 표시 */
+    --shadow:    0 1px 3px rgba(180,140,100,.10);
 }
 
+/* ---------- 바탕 ---------- */
 .stApp { background: var(--bg); }
 
 html, body, [class*="css"], .stMarkdown, p, span, label, div {
@@ -135,195 +149,215 @@ html, body, [class*="css"], .stMarkdown, p, span, label, div {
 }
 .stApp, .stMarkdown p, .stMarkdown li { color: var(--ink); }
 
-label, .stSelectbox label, .stNumberInput label, .stTextInput label,
-[data-testid="stWidgetLabel"] p {
+/* 위젯 라벨 */
+label, [data-testid="stWidgetLabel"] p {
     color: var(--ink-2) !important;
     font-size: 0.88rem !important;
-    font-weight: 500 !important;
+    font-weight: 700 !important;
 }
 [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
     color: var(--ink-3) !important;
     font-size: 0.85rem !important;
 }
 
+/* 사이드바 */
 section[data-testid="stSidebar"] {
-    background: var(--surface);
-    border-right: 1px solid var(--line);
+    background: var(--sidebar);
+    border-right: 1px solid var(--line-2);
+}
+
+/* 사이드바 안의 입력칸은 흰색이라 저절로 구분됨 */
+section[data-testid="stSidebar"] .stTextInput input,
+section[data-testid="stSidebar"] .stNumberInput input,
+section[data-testid="stSidebar"] [data-baseweb="select"] > div {
+    background: #FFFFFF !important;
 }
 section[data-testid="stSidebar"] .stMarkdown p { color: var(--ink-2); }
 
+/* ---------- 제목 ---------- */
 .hood {
-    font-family: 'Black Han Sans', sans-serif;
-    font-size: clamp(2rem, 4vw, 2.9rem);
-    line-height: 1.05;
-    letter-spacing: -0.02em;
+    font-size: clamp(2.1rem, 4.4vw, 3.2rem);
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
     color: var(--ink);
     margin: 0;
 }
-.hood span { color: var(--flame); }
-.hood-sub { color: var(--ink-3); font-size: 0.95rem; margin: 6px 0 28px 0; }
+.hood span { color: var(--orange); }
 
+.hood-sub {
+    color: var(--ink-2);
+    font-size: 1rem;
+    font-weight: 500;
+    margin: 8px 0 6px 0;
+}
+
+/* 제목 아래 가는 구분선 */
+.hood-line {
+    height: 1px;
+    background: var(--line-2);
+    margin: 16px 0 22px 0;
+}
+
+/* ---------- 지금 할 일 카드 ---------- */
 .burner {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-left: 5px solid var(--flame);
-    border-radius: 6px;
-    padding: 26px 28px 22px 28px;
-    margin-bottom: 18px;
+    background: var(--peach);
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    padding: 20px 24px 22px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 14px;
 }
-.bar { display: flex; gap: 4px; margin-bottom: 18px; }
-.bar i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); }
-.bar i.on { background: var(--flame); }
-.bar i.past { background: #7A4526; }
 
+/* 단계 번호 줄. 알약 모양 표시가 앞에 붙음 */
 .burner-tag {
+    display: flex;
+    align-items: center;
+    gap: 9px;
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.16em;
-    color: var(--flame);
-    margin-bottom: 10px;
+    font-size: 0.82rem;
+    color: var(--orange-t);
+    margin-bottom: 12px;
 }
+.pill {
+    background: var(--orange);
+    color: #fff;
+    font-family: 'Gothic A1', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 999px;
+    letter-spacing: 0;
+}
+
+/* 진행 막대 */
+.bar { display: flex; gap: 4px; margin-bottom: 16px; }
+.bar i {
+    flex: 1;
+    height: 4px;
+    border-radius: 3px;
+    background: #F0E0CC;
+}
+.bar i.on   { background: var(--orange); }
+.bar i.past { background: #F7C795; }
+
 .burner-body {
-    font-size: clamp(1.3rem, 2.4vw, 1.7rem);
-    font-weight: 700;
+    font-size: clamp(1.25rem, 2.3vw, 1.6rem);
+    font-weight: 800;
     line-height: 1.45;
     color: var(--ink);
     word-break: keep-all;
 }
 .burner-meta {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.95rem;
-    color: var(--mint);
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--orange-t);
     margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid var(--line);
+    padding-top: 12px;
+    border-top: 1px solid var(--line-2);
 }
+
+/* 시작 전 안내 카드 */
 .burner-empty {
-    background: var(--surface);
-    border: 1px dashed var(--line);
-    border-radius: 6px;
-    padding: 40px 28px;
+    background: var(--card);
+    border: 1px dashed var(--line-2);
+    border-radius: 14px;
+    padding: 38px 24px;
     text-align: center;
     color: var(--ink-2);
-    line-height: 1.8;
+    line-height: 1.85;
 }
-.burner-empty b { color: var(--flame); font-weight: 700; }
+.burner-empty b { color: var(--orange-t); font-weight: 800; }
 
-/* ---------- 마이크 ---------- */
-/* 젖은 손으로 한 번에 누를 수 있도록 크게 키움 */
-[data-testid="stAudioInput"] {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-left: 5px solid var(--flame);
-    border-radius: 6px;
-    padding: 16px 18px;
-    margin-bottom: 6px;
-}
-
-/* 안쪽 녹음 버튼을 큼직하게 */
-[data-testid="stAudioInput"] button {
-    min-width: 56px !important;
-    min-height: 56px !important;
-    border-radius: 50% !important;
-    background: var(--flame) !important;
-    border: none !important;
-    color: #1A0E06 !important;
-}
-[data-testid="stAudioInput"] button:hover {
-    background: #FF9459 !important;
-}
-
-/* 버튼 안의 그림도 함께 키움 */
-[data-testid="stAudioInput"] button svg {
-    width: 26px !important;
-    height: 26px !important;
-}
-
-/* 소리 파형이 보이는 자리를 넓힘 */
-[data-testid="stAudioInput"] > div {
-    min-height: 60px;
-}
-
-/* 마이크 위에 붙는 안내 문구 */
-.mic-cue {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: var(--ink);
-    margin-bottom: 10px;
-}
-.mic-cue span {
-    font-size: 1.5rem;
-    line-height: 1;
-}
-
-/* 요소 사이에 숨 쉴 틈을 주는 빈 칸 */
-.gap { height: 10px; }
-
+/* ---------- 타이머 ---------- */
 .timer {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 12px;
-    background: var(--surface);
+    background: var(--card);
     border: 1px solid var(--line);
-    border-left: 4px solid var(--mint);
-    border-radius: 5px;
+    border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 8px;
+    box-shadow: var(--shadow);
 }
 .timer.done {
-    border-left-color: var(--flame);
-    border-color: #4A2E1C;
-    background: #241812;
+    background: var(--peach);
+    border-color: var(--orange);
 }
 .timer-name {
     color: var(--ink-2);
     font-size: 0.95rem;
+    font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .timer-left {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 1.6rem;
+    font-size: 1.5rem;
     font-weight: 600;
-    color: var(--mint);
+    color: var(--ink);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
 }
-.timer.done .timer-left { color: var(--flame); }
+.timer.done .timer-left { color: var(--orange-t); }
 
+/* ---------- 영역 제목 ---------- */
 .rail {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.18em;
-    color: var(--ink-3);
-    margin: 26px 0 12px 0;
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: var(--ink);
+    margin: 22px 0 10px 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-2);
 }
-.rail::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
+/* 맨 위 제목에는 구분선을 넣지 않음 */
+.rail.top { border-top: none; padding-top: 0; margin-top: 0; }
+
+/* ---------- 계량 결과 ---------- */
 .scale-out {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    padding: 18px 20px;
+    background: var(--peach);
+    border: 1px solid var(--line-2);
+    border-radius: 12px;
+    padding: 16px 20px;
     margin-top: 6px;
 }
 .scale-big {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 1.9rem;
+    font-size: 1.75rem;
     font-weight: 600;
-    color: var(--mint);
+    color: var(--orange-t);
     font-variant-numeric: tabular-nums;
 }
 .scale-sub { color: var(--ink-3); font-size: 0.88rem; margin-top: 6px; }
 
+/* ---------- 재료 목록 ---------- */
+.ing {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 2px;
+    border-bottom: 1px solid var(--line);
+}
+.ing .nm { flex: 1; color: var(--ink); font-weight: 700; font-size: 0.95rem; }
+.ing .am {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--amount);
+}
+.ing .am.none {
+    font-family: 'Gothic A1', sans-serif;
+    font-weight: 500;
+    color: #A89A8E;
+    font-size: 0.85rem;
+}
+
+/* ---------- 목록 한 줄 ---------- */
 .step-line {
     display: flex;
     gap: 12px;
@@ -339,64 +373,162 @@ section[data-testid="stSidebar"] .stMarkdown p { color: var(--ink-2); }
     color: var(--ink-3);
     flex-shrink: 0;
 }
-.step-line.now { color: var(--ink); font-weight: 700; }
-.step-line.now em { color: var(--flame); }
+.step-line.now { color: var(--ink); font-weight: 800; }
+.step-line.now em { color: var(--orange-t); }
 
+/* ---------- 버튼 ---------- */
 .stButton > button {
-    background: var(--surface-2);
-    color: var(--ink);
-    border: 1px solid var(--line);
-    border-radius: 5px;
+    background: var(--card);
+    color: var(--ink-2);
+    border: 1px solid var(--line-2);
+    border-radius: 12px;
     font-weight: 700;
     font-size: 0.92rem;
     min-height: 46px;
-    transition: border-color .12s ease, color .12s ease;
+    box-shadow: var(--shadow);
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
 }
-.stButton > button:hover { border-color: var(--flame); color: var(--flame); }
+.stButton > button:hover {
+    background: var(--peach);
+    border-color: var(--orange);
+    color: var(--orange-t);
+}
 .stButton > button:focus-visible {
-    outline: 2px solid var(--flame);
+    outline: 2px solid var(--orange);
     outline-offset: 2px;
 }
 .stButton > button:disabled {
-    color: var(--ink-3);
+    color: #B9AB9F;
+    background: var(--card);
     border-color: var(--line);
-    opacity: .45;
-}
-.stForm .stButton > button {
-    background: var(--flame);
-    border-color: var(--flame);
-    color: #1A0E06;
-}
-.stForm .stButton > button:hover {
-    background: #FF9459;
-    border-color: #FF9459;
-    color: #1A0E06;
+    box-shadow: none;
 }
 
+/* 폼 안의 주 버튼은 주황으로 채움 */
+.stForm .stButton > button,
+[data-testid="stFormSubmitButton"] > button {
+    background: var(--orange-t);
+    border-color: var(--orange-t);
+    color: #fff;
+}
+.stForm .stButton > button:hover,
+[data-testid="stFormSubmitButton"] > button:hover {
+    background: #8F4303;
+    border-color: #8F4303;
+    color: #fff;
+}
+
+/* 주요 동작 버튼만 채운 모양으로. type="primary" 로 지정한 것들 */
+button[kind="primary"], [data-testid="stBaseButton-primary"] {
+    background: var(--orange-t) !important;
+    border-color: var(--orange-t) !important;
+    color: #fff !important;
+}
+button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover {
+    background: #8F4303 !important;
+    border-color: #8F4303 !important;
+    color: #fff !important;
+}
+
+/* ---------- 입력 ---------- */
 .stTextInput input, .stNumberInput input {
-    background: var(--surface-2) !important;
+    background: var(--card) !important;
     color: var(--ink) !important;
-    border: 1px solid var(--line) !important;
-    border-radius: 5px !important;
+    border: 1.5px solid var(--line-3) !important;
+    border-radius: 12px !important;
     min-height: 44px;
 }
-.stTextInput input::placeholder { color: var(--ink-3) !important; }
-
-[data-testid="stExpander"] {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 6px;
+.stTextInput input::placeholder { color: #B0A297 !important; }
+.stTextInput input:focus, .stNumberInput input:focus {
+    border-color: var(--orange) !important;
 }
-[data-testid="stExpander"] summary { color: var(--ink-2) !important; }
 
-[data-testid="stChatMessage"] {
-    background: var(--surface);
+/* 선택 상자 */
+[data-baseweb="select"] > div {
+    background: var(--card) !important;
+    border: 1.5px solid var(--line-3) !important;
+    border-radius: 12px !important;
+}
+
+/* 숫자 입력의 더하기 빼기 단추 */
+[data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] {
+    border-color: var(--line-3) !important;
+}
+
+/* 접었다 펴는 상자 */
+[data-testid="stExpander"] {
+    background: var(--card);
     border: 1px solid var(--line);
-    border-radius: 6px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+}
+[data-testid="stExpander"] summary {
+    color: var(--ink) !important;
+    font-weight: 700;
+}
+
+/* 말풍선 */
+[data-testid="stChatMessage"] {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
 }
 [data-testid="stChatMessage"] p { color: var(--ink); }
 
+/* 비서 답변 말풍선은 살구색으로 구분 */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
+    background: var(--peach);
+    border-color: var(--line-2);
+}
+
 hr { border-color: var(--line) !important; }
+
+/* ---------- 마이크 ---------- */
+[data-testid="stAudioInput"] {
+    background: var(--card);
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    padding: 14px 18px;
+    box-shadow: var(--shadow);
+}
+[data-testid="stAudioInput"] button {
+    min-width: 54px !important;
+    min-height: 54px !important;
+    border-radius: 50% !important;
+    background: var(--orange) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 2px 6px rgba(232,132,42,.35) !important;
+}
+[data-testid="stAudioInput"] button:hover {
+    background: #D3730F !important;
+}
+[data-testid="stAudioInput"] button svg {
+    width: 24px !important;
+    height: 24px !important;
+}
+[data-testid="stAudioInput"] > div { min-height: 56px; }
+
+.mic-cue {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--ink);
+    margin-bottom: 10px;
+}
+.mic-cue span { font-size: 1.3rem; line-height: 1; }
+
+/* 요소 사이 여백 */
+.gap { height: 8px; }
+
+/* 화면이 좁아질 때 */
+@media (max-width: 640px) {
+    .hood { font-size: 1.9rem; }
+    .burner-body { font-size: 1.15rem; }
+}
 
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -535,7 +667,7 @@ def parse_voice(raw):
 
 # 레시피북을 저장할 파일 위치
 # app.py 와 같은 폴더에 만들어짐
-BOOK_FILE = Path("recipes.json")
+BOOK_FILE = Path(__file__).parent / "recipes.json"
 
 
 def load_book():
@@ -790,7 +922,7 @@ def timer_panel():
         # 돌아가는 중이면 중지, 다 됐으면 지우기 버튼을 보여줌
         # 어느 쪽이든 목록에서 빼는 동작은 같음
         label = "지우기" if done else "중지"
-        if st.button(label, key=f"kill_{t['id']}", use_container_width=True):
+        if st.button(label, key=f"kill_{t['id']}", width="stretch"):
             st.session_state.timers = [
                 x for x in st.session_state.timers if x["id"] != t["id"]
             ]
@@ -875,15 +1007,37 @@ def recipe_schema():
     )
 
 
-def make_recipe(client, model, dish="", servings=2, video_url=""):
-    """요리 이름이나 유튜브 영상에서 조리 순서를 만들어 돌려줌"""
+def make_recipe(client, model, dish="", servings=2, video_url="",
+                audio_bytes=None):
+    """요리 이름, 유튜브 영상, 또는 음성 주문에서 조리 순서를 만들어 돌려줌"""
 
     # 모델에게 보낼 조각들을 담을 목록
     parts = []
 
+    # 음성으로 주문한 경우
+    # 무슨 요리인지 알아듣는 것과 순서 만들기를 한 번에 처리함
+    if audio_bytes:
+        parts.append(
+            types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav")
+        )
+        prompt = (
+            "이 음성에서 사용자가 만들고 싶어 하는 요리를 알아들어라.\n"
+            f"기본 인분은 {servings}인분이다. "
+            "음성에 인분이 나오면 그 값을 따른다.\n"
+            "dish 에는 알아들은 요리 이름을 쓴다.\n"
+            "ingredients 에는 필요한 재료를 분량과 함께 모두 적는다.\n"
+            "분량은 그램이나 큰술처럼 셀 수 있는 단위로 쓴다.\n"
+            "steps 의 do 에는 그 단계에서 넣는 재료와 분량을 함께 쓴다.\n"
+            "at 은 빈 문자열로 둔다.\n"
+            "재료 손질부터 완성까지 6단계에서 10단계로 나눈다.\n"
+            "sec 에는 그 단계에 필요한 시간을 초로 쓰고, "
+            "시간을 잴 필요가 없으면 0으로 둔다.\n"
+            "요리 이름을 알아듣지 못했으면 dish 와 steps 를 모두 비운다."
+        )
+
     # 영상 주소가 있으면 영상을 먼저 넣음
     # Gemini는 유튜브 주소를 그대로 받아 화면과 소리를 함께 이해함
-    if video_url:
+    elif video_url:
         parts.append(
             types.Part(file_data=types.FileData(file_uri=video_url.strip()))
         )
@@ -902,7 +1056,17 @@ def make_recipe(client, model, dish="", servings=2, video_url=""):
             "양념은 하나로 묶지 말고 간장, 설탕, 고춧가루처럼 따로 적는다.\n"
             "\n"
             "steps 의 do 에는 그 단계에서 넣는 재료와 분량을 함께 쓴다.\n"
+            "meta 에는 불 세기와 조리 시간을 짧게 쓴다. "
+            "예: 중불 3분. 해당 없으면 빈 문자열로 둔다.\n"
             "at 에는 그 장면이 시작되는 영상 시각을 MM:SS 로 적는다.\n"
+            "\n"
+            "sec 는 실제로 조리에 걸리는 시간을 초로 쓴다.\n"
+            "영상 재생 시간이나 장면 길이가 아니라 "
+            "그 단계를 하는 데 걸리는 시간이다.\n"
+            "예를 들어 '중불에서 5분 볶는다' 면 sec 는 300 이다.\n"
+            "썰기나 그릇에 담기처럼 시간을 재지 않는 단계는 0 으로 둔다.\n"
+            "확실하지 않으면 0 으로 둔다.\n"
+            "\n"
             "6단계에서 12단계로 나눈다."
         )
 
@@ -1024,8 +1188,14 @@ with st.sidebar:
     if st.session_state.book is None:
         st.session_state.book = load_book()
 
+    # 로고를 맨 위에 표시함
+    # 그림이 없어도 앱이 멈추지 않도록 감쌈
+    logo = ASSETS / "logo.png"
+    if logo.exists():
+        st.image(str(logo), width="stretch")
+
     # 키 입력 영역
-    st.markdown('<div class="rail" style="margin-top:0">API 키</div>',
+    st.markdown('<div class="rail top">API 키</div>',
                 unsafe_allow_html=True)
     api_key = st.text_input(
         "Gemini API 키",
@@ -1046,7 +1216,8 @@ with st.sidebar:
         "요리 이름", placeholder="예: 제육볶음", label_visibility="collapsed"
     )
     servings = st.number_input("몇 인분", min_value=1, max_value=10, value=2)
-    start = st.button("조리 순서 받기", use_container_width=True)
+    start = st.button("조리 순서 받기", width="stretch",
+                      type="primary")
 
     # 저장해 둔 레시피를 꺼내 쓰는 영역
     book = st.session_state.book
@@ -1068,12 +1239,12 @@ with st.sidebar:
 
         # 불러오기와 삭제 버튼을 나란히 둠
         b1, b2 = st.columns(2)
-        do_load = b1.button("불러오기", use_container_width=True)
-        do_drop = b2.button("삭제", use_container_width=True)
+        do_load = b1.button("불러오기", width="stretch")
+        do_drop = b2.button("삭제", width="stretch")
 
     # 레시피북 전체를 파일로 내려받고 올리는 영역
     # 배포 환경에서는 서버에 파일이 남지 않으므로 이 방법으로 보관함
-    with st.expander("레시피북 백업"):
+    with st.expander("📕 레시피북 백업"):
 
         # 지금 목록을 파일로 내려받음
         st.download_button(
@@ -1081,7 +1252,7 @@ with st.sidebar:
             data=json.dumps(book, ensure_ascii=False, indent=2),
             file_name="recipes.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
             disabled=not book,
         )
 
@@ -1105,7 +1276,7 @@ with st.sidebar:
     st.caption(f"이번 세션 질문 {asked}회")
 
     # 처음부터 다시 시작하는 버튼
-    if st.button("전부 지우기", use_container_width=True):
+    if st.button("전부 지우기", width="stretch"):
         reset_all()
         st.rerun()
 
@@ -1114,11 +1285,24 @@ with st.sidebar:
 # 8. 상단 제목
 # ---------------------------------------------------------------------
 
-st.markdown(
-    '<div class="hood"><span>AI모</span>네 밥상</div>'
-    '<div class="hood-sub">물어보면 알려주는 AI 요리비서</div>',
-    unsafe_allow_html=True,
-)
+# 제목과 배너를 좌우로 나란히 놓음
+head_l, head_r = st.columns([1, 1.15], vertical_alignment="center")
+
+with head_l:
+    st.markdown(
+        '<div class="hood"><span>AI모</span>네 밥상</div>'
+        '<div class="hood-sub">물어보면 알려주는 AI 요리비서</div>',
+        unsafe_allow_html=True,
+    )
+
+with head_r:
+    # 배너 그림. 없으면 그냥 건너뜀
+    banner = ASSETS / "banner.png"
+    if banner.exists():
+        st.image(str(banner), width="stretch")
+
+# 제목 아래 가는 구분선
+st.markdown('<div class="hood-line"></div>', unsafe_allow_html=True)
 
 
 # 키를 입력하지 않았으면 안내만 하고 아래 코드를 멈춤
@@ -1143,7 +1327,7 @@ except Exception as e:
 
 # 유튜브 링크로 레시피를 받는 줄
 # 요리의 시작점이므로 제목 바로 아래에 둠
-st.markdown('<div class="rail" style="margin-top:0">영상에서 가져오기</div>',
+st.markdown('<div class="rail top">🎬 영상에서 가져오기</div>',
             unsafe_allow_html=True)
 
 # 입력칸과 버튼을 한 줄에 나란히 놓음
@@ -1155,7 +1339,7 @@ with st.form("video_form"):
         placeholder="유튜브 링크를 붙여넣으세요",
         label_visibility="collapsed",
     )
-    start_video = v2.form_submit_button("순서 받기", use_container_width=True)
+    start_video = v2.form_submit_button("순서 받기", width="stretch")
 
 st.caption("공개 영상만 됩니다. 10분 이내 영상을 권합니다")
 
@@ -1251,19 +1435,39 @@ with left:
             for n in range(total)
         )
 
-        # 부가 정보가 있을 때만 아랫줄을 표시함
-        meta = step.get("meta", "")
+        # 부가 정보를 만듦
+        # 모델이 불 세기만 적고 시간을 빠뜨리는 경우가 있어
+        # sec 값이 있으면 화면에서 시간을 채워 넣음
+        meta = (step.get("meta") or "").strip()
+        sec = int(step.get("sec") or 0)
+
+        # 이미 분이나 초가 적혀 있는지 확인함
+        has_time = bool(re.search(r"\d+\s*(분|초|시간)", meta))
+
+        # 시간이 없고 잴 만한 값이 있으면 뒤에 붙임
+        if sec >= MIN_TIMER_SEC and not has_time:
+            phrase = dur_phrase(sec)
+            meta = f"{meta} · {phrase}" if meta else phrase
+
         meta_html = f'<div class="burner-meta">{esc(meta)}</div>' if meta else ""
 
         # 영상에서 가져온 경우 그 장면의 시각을 함께 보여줌
         at = step.get("at", "")
         at_html = f' · {esc(at)}' if at else ""
 
-        # 지금 할 일을 패널로 표시함
+        # 첫 단계와 마지막 단계는 알약 모양으로 따로 알려줌
+        if i == 0:
+            pill = '<span class="pill">첫 단계</span>'
+        elif i == total - 1:
+            pill = '<span class="pill">마지막 단계</span>'
+        else:
+            pill = f'<span class="pill">{esc(st.session_state.dish)}</span>'
+
+        # 지금 할 일을 카드로 표시함
         st.markdown(
             f'<div class="burner">'
             f'<div class="bar">{bar}</div>'
-            f'<div class="burner-tag">{esc(st.session_state.dish)} · '
+            f'<div class="burner-tag">{pill}'
             f'{i + 1:02d} / {total:02d}{at_html}</div>'
             f'<div class="burner-body">{esc(step["do"])}</div>'
             f"{meta_html}"
@@ -1278,11 +1482,12 @@ with left:
                      autoplay=st.session_state.step_play)
             st.session_state.step_play = False
 
-        # 이 단계에 시간이 정해져 있으면 타이머를 바로 걸 수 있게 함
-        sec = int(step.get("sec") or 0)
-        if sec > 0:
+        # 이 단계에 잴 만한 시간이 있을 때만 타이머 버튼을 보여줌
+        # 몇 초짜리는 타이머로 의미가 없어 감춤
+        # sec 값은 위에서 이미 꺼내 두었음
+        if sec >= MIN_TIMER_SEC:
             if st.button(f"이 단계 타이머 걸기  {fmt(sec)}",
-                         use_container_width=True):
+                         width="stretch"):
                 add_timer(step["do"][:14], sec)
                 st.rerun()
 
@@ -1292,12 +1497,12 @@ with left:
         # 단계를 앞뒤로 옮기는 버튼
         back, fwd = st.columns(2)
         with back:
-            if st.button("← 이전", use_container_width=True, disabled=(i == 0)):
+            if st.button("← 이전", width="stretch", disabled=(i == 0)):
                 st.session_state.cursor -= 1
                 speak_current_step()
                 st.rerun()
         with fwd:
-            if st.button("다음 →", use_container_width=True,
+            if st.button("다음 →", width="stretch",
                          disabled=(i >= total - 1)):
                 st.session_state.cursor += 1
                 speak_current_step()
@@ -1306,25 +1511,24 @@ with left:
         # 재료와 분량을 접어서 보여줌
         # 장 볼 때와 계량할 때 여기만 보면 됨
         if st.session_state.ingredients:
-            with st.expander(f"재료 {len(st.session_state.ingredients)}가지"):
+            with st.expander(f"🥕 재료 {len(st.session_state.ingredients)}가지"):
                 for g in st.session_state.ingredients:
 
                     # 영상에 분량이 없던 재료는 흐리게 표시해 구분함
                     amount = g.get("amount", "")
                     missing = "영상에 없" in amount
-                    color = "#98A0AE" if missing else "#6FE0C6"
+                    css = "am none" if missing else "am"
 
                     st.markdown(
-                        f'<div class="step-line">'
-                        f'<span style="flex:1">{esc(g["name"])}</span>'
-                        f'<span style="color:{color};'
-                        f'font-family:IBM Plex Mono,monospace">'
-                        f'{esc(amount)}</span></div>',
+                        f'<div class="ing">'
+                        f'<span class="nm">{esc(g["name"])}</span>'
+                        f'<span class="{css}">{esc(amount)}</span>'
+                        f"</div>",
                         unsafe_allow_html=True,
                     )
 
         # 전체 순서를 접어서 보여줌
-        with st.expander("전체 순서 보기"):
+        with st.expander("🍲 전체 순서 보기"):
             for n, s in enumerate(st.session_state.steps):
                 now = " now" if n == i else ""
                 st.markdown(
@@ -1344,7 +1548,7 @@ with left:
         if saved:
             st.caption("이 레시피는 레시피북에 있습니다")
         else:
-            if st.button("레시피북에 저장", use_container_width=True):
+            if st.button("♡ 레시피북에 저장", width="stretch"):
                 ok = add_to_book(
                     st.session_state.dish,
                     st.session_state.steps,
@@ -1361,41 +1565,55 @@ with left:
     else:
         st.markdown(
             '<div class="burner-empty">'
-            '왼쪽에 요리 이름을 적고 <b>조리 순서 받기</b>를 누르세요<br>'
-            '순서 없이 바로 물어봐도 됩니다'
+            '아래 <b>마이크</b>에 대고 "제육볶음 만들래" 라고 말해보세요<br>'
+            '유튜브 링크를 넣거나 왼쪽에 요리 이름을 적어도 됩니다'
             "</div>",
             unsafe_allow_html=True,
         )
 
     # 질문 영역
-    st.markdown('<div class="rail">물어보기</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rail">💬 물어보기</div>', unsafe_allow_html=True)
+
+    # 요리를 골랐는지에 따라 안내 문구를 바꿈
+    # 같은 마이크지만 하는 일이 다르므로 무엇을 말해야 하는지 알려줌
+    if st.session_state.steps:
+        cue = "동그란 버튼을 누르고 물어보세요"
+        hint = '"3분 뒤에 알려줘" 처럼 말하면 타이머가 걸립니다'
+    else:
+        cue = "무슨 요리를 만들까요?"
+        hint = '"제육볶음 만들래" 처럼 말하면 순서를 만들어 드려요'
 
     # 마이크가 어디 있는지 한눈에 보이도록 안내를 크게 붙임
     st.markdown(
-        '<div class="mic-cue"><span>🎤</span>동그란 버튼을 누르고 물어보세요</div>',
+        f'<div class="mic-cue"><span>🎤</span>{cue}</div>',
         unsafe_allow_html=True,
     )
 
     # 마이크 녹음 버튼
     audio = st.audio_input("눌러서 말하기", label_visibility="collapsed")
-    st.caption('"3분 뒤에 알려줘" 처럼 말하면 타이머가 걸립니다')
+    st.caption(hint)
 
     # 자주 묻는 질문을 버튼으로 만들어 둠
     quick = None
-    q1, q2, q3 = st.columns(3)
+    q1, q2, q3, q4 = st.columns(4)
     with q1:
-        if st.button("다 익었나", use_container_width=True):
+        if st.button("다 익었나", width="stretch"):
             quick = "지금 상태가 다 익은 건지 어떻게 확인해?"
     with q2:
-        if st.button("간이 안 맞아", use_container_width=True):
+        if st.button("간이 안 맞아", width="stretch"):
             quick = "간이 안 맞는데 지금 뭘 더 넣어야 해?"
     with q3:
-        if st.button("재료가 없어", use_container_width=True):
+        if st.button("재료가 없어", width="stretch"):
             quick = "이번 단계 재료가 없는데 뭘로 대신할 수 있어?"
+    with q4:
+        # 이 버튼만 Gemini를 부르지 않고 바로 타이머를 검
+        if st.button("타이머 5분", width="stretch"):
+            add_timer("5분 타이머", 300)
+            st.rerun()
 
     # 계량 환산 영역
     # 표만으로 계산하므로 즉시 답이 나오고 API 한도도 안 씀
-    with st.expander("계량 환산"):
+    with st.expander("⚖ 계량 환산"):
         c1, c2, c3 = st.columns([1.2, 1, 0.8])
         ing = c1.selectbox("재료", list(DENSITY.keys()))
         unit = c2.selectbox("도구", list(UNITS.keys()))
@@ -1420,7 +1638,7 @@ with left:
 with right:
 
     # 타이머 영역
-    st.markdown('<div class="rail" style="margin-top:0">타이머</div>',
+    st.markdown('<div class="rail top">⏱ 타이머</div>',
                 unsafe_allow_html=True)
 
     # 타이머를 직접 추가하는 칸
@@ -1430,7 +1648,7 @@ with right:
                                label_visibility="collapsed")
         t_min = t2.number_input("분", 0.0, 180.0, 3.0, 0.5,
                                 label_visibility="collapsed")
-        t_add = st.form_submit_button("타이머 시작", use_container_width=True)
+        t_add = st.form_submit_button("타이머 시작", width="stretch")
 
     # 버튼을 눌렀고 시간이 0보다 크면 타이머를 만듦
     if t_add and t_min > 0:
@@ -1440,8 +1658,18 @@ with right:
     # 1초마다 갱신되는 타이머 목록을 그림
     timer_panel()
 
+    # 손을 쓰기 어려울 때 한 번에 다음 단계로 넘기는 버튼
+    # 오른쪽에도 두어 어느 쪽 손으로든 누를 수 있게 함
+    if st.session_state.steps:
+        last = st.session_state.cursor >= len(st.session_state.steps) - 1
+        if st.button("🔔 다음 단계 알려줘", width="stretch",
+                     disabled=last):
+            st.session_state.cursor += 1
+            speak_current_step()
+            st.rerun()
+
     # 대화 영역
-    st.markdown('<div class="rail">주고받은 말</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rail">🗨 주고받은 말</div>', unsafe_allow_html=True)
 
     # 대화가 없으면 안내 문구만 표시함
     if not st.session_state.history:
@@ -1505,18 +1733,43 @@ if audio is not None:
         # 이 녹음을 처리했다고 먼저 기록해 둠
         st.session_state.last_audio = fingerprint
 
-        # 이번 요청에만 녹음을 실어 보냄
-        audio_bytes = raw_audio
+        # 아직 요리를 안 골랐으면 이 말을 메뉴 주문으로 봄
+        # 알아듣기와 순서 만들기를 한 번의 호출로 처리함
+        if not st.session_state.steps:
 
-        # 받아쓰기와 답변을 한 번에 받아 호출 횟수를 절반으로 줄임
-        # 형식은 아래 voice_config 가 강제하므로 여기서는 할 일만 알려줌
-        ask_text = (
-            context_line()
-            + "이 오디오에 담긴 말을 듣고 답하라. "
-            "question 에는 들린 말을 그대로 받아쓴다. "
-            "answer 에는 그 질문에 대한 답만 쓴다. "
-            "answer 에 질문 내용을 다시 적지 않는다."
-        )
+            with st.spinner("무슨 요리인지 듣는 중..."):
+                try:
+                    name, items, steps = make_recipe(
+                        client, model, audio_bytes=raw_audio,
+                        servings=servings,
+                    )
+                except Exception as e:
+                    name, items, steps = "", [], []
+                    st.error(f"주문을 받지 못했습니다. {e}")
+
+            # 알아들었으면 바로 조리 순서를 띄움
+            if steps:
+                apply_recipe(name or "요리", steps, items)
+
+            # 못 알아들었으면 안내만 함
+            else:
+                st.warning("어떤 요리인지 못 알아들었습니다. "
+                           "'제육볶음 만들래' 처럼 말해 주세요.")
+
+        # 이미 요리를 고른 뒤라면 평소대로 질문으로 처리함
+        else:
+            # 이번 요청에만 녹음을 실어 보냄
+            audio_bytes = raw_audio
+
+            # 받아쓰기와 답변을 한 번에 받아 호출 횟수를 절반으로 줄임
+            # 형식은 아래 voice_config 가 강제하므로 여기서는 할 일만 알려줌
+            ask_text = (
+                context_line()
+                + "이 오디오에 담긴 말을 듣고 답하라. "
+                "question 에는 들린 말을 그대로 받아쓴다. "
+                "answer 에는 그 질문에 대한 답만 쓴다. "
+                "answer 에 질문 내용을 다시 적지 않는다."
+            )
 
 # 빠른 질문 버튼을 눌렀으면 그 문장을 사용함
 elif quick:
